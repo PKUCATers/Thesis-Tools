@@ -1,0 +1,194 @@
+﻿AppType=JavaFX
+Build1=Default,b4j.example
+File1=item.bjl
+File2=main.bjl
+FileGroup1=Default Group
+FileGroup2=Default Group
+Group=Default Group
+Library1=jcore
+Library2=jfx
+Library3=jokhttputils2
+Library4=jstringutils
+Library5=okhttp
+Library6=jtidy
+Library7=jxmlsax
+Library8=jsoup
+Library9=jpoi
+NumberOfFiles=2
+NumberOfLibraries=9
+NumberOfModules=0
+Version=7.32
+@EndOfDesignText@
+#Region Project Attributes 
+	#MainFormWidth: 600
+	#MainFormHeight: 600 
+#End Region
+
+Sub Process_Globals
+	Private fx As JFX
+	Private MainForm As Form
+	Private ListView1 As ListView
+	Private thesisMap As Map
+	Private js As jSoup
+End Sub
+
+Sub AppStart (Form1 As Form, Args() As String)
+	MainForm = Form1
+	MainForm.RootPane.LoadLayout("main") 'Load the layout file.
+	MainForm.Show
+
+	thesisMap.Initialize
+	addItems
+End Sub
+
+Sub addItems
+	For Each param As String In Array As String("导师1姓名")
+		Dim p As Pane
+		p.Initialize("")
+		p.LoadLayout("item")
+		Dim lbl As Label=p.GetNode(1)
+		lbl.Text=param
+		ListView1.Items.Add(p)
+		p.PrefHeight=30dip
+	Next
+End Sub
+
+'Return true to allow the default exceptions handler to handle the uncaught exception.
+Sub Application_Error (Error As Exception, StackTrace As String) As Boolean
+	Return True
+End Sub
+
+Sub CrawlButton_MouseClicked (EventData As MouseEvent)
+	thesisMap.Clear
+	Dim teacherName As String
+	Dim advsearchstrs As StringBuilder
+	advsearchstrs.Initialize
+	Dim su As StringUtils
+	Dim index As Int=0
+	For Each p As Pane In ListView1.Items
+		Dim tf As TextField
+		tf=p.GetNode(0)
+		Select index 
+			Case 0
+				teacherName=tf.Text
+				If teacherName<>"" Then
+					advsearchstrs.Append("teacher_name:").Append(su.EncodeUrl(teacherName,"UTF8")).Append(":And")
+					
+				End If
+		End Select
+		index=index+1
+	Next
+	Log(advsearchstrs.ToString)
+	Dim params As String="advsearchstrs="&advsearchstrs.ToString&"&dispkeyword="&teacherName&"&degreestr=&sfield=teacher_name&selrelatin=AND&sfield=author&selrelatin=AND&sfield=learnid&selrelatin=AND"
+
+	'params=su.EncodeUrl(params,"GBK")
+	'params="advsearchstrs=teacher_name%3A%E4%BF%9E%E6%95%AC%E6%9D%BE%3AAND&dispkeyword=+%E4%BF%9E%E6%95%AC%E6%9D%BE&degreestr=&sfield=teacher_name&selrelatin=AND&sfield=author&selrelatin=AND&sfield=learnid&selrelatin=AND"
+	Log(params)
+	Dim job As HttpJob
+	job.Initialize("",Me)
+	job.PostString("http://thesis.lib.pku.edu.cn/advsearch.action",params)
+	'job.GetRequest.SetHeader("","")
+	wait for (job) jobDone (job As HttpJob)
+	If job.Success Then
+		'Log(job.GetString)
+		File.WriteString(File.DirApp,"out.html",job.GetString)
+		wait for (getList) complete (result As Object)
+
+	End If
+	Log("done")
+	Log(thesisMap)
+    Dim wb As PoiWorkbook
+	wb.InitializeNew(True)
+	Dim sheet1 As PoiSheet = wb.AddSheet("Sheet1",0)
+	Dim index As Int=0
+	For Each title As String In thesisMap.Keys
+		Log(title)
+		Dim row As PoiRow = sheet1.CreateRow(index)
+		Dim infoMap As Map=thesisMap.Get(title)
+		Dim author As String=infoMap.Get("author")
+		Dim link As String=infoMap.Get("link")
+		Dim completedTime As String= infoMap.Get("completedTime")
+		Dim docInfo As String=""
+		Do While docInfo=""
+			wait for (getDocInfo(link)) complete (returned As String)
+			docInfo=returned
+		Loop
+		row.CreateCellString(0,title)
+		row.CreateCellString(1,author)
+		row.CreateCellString(2,teacherName)
+		row.CreateCellString(3,completedTime)
+		row.CreateCellString(4,link)
+		row.CreateCellString(5,docInfo)
+		index=index+1
+	Next
+	wb.Save(File.DirApp,teacherName&".xlsx")
+	fx.Msgbox(MainForm,"Done","")
+End Sub
+
+Sub getDocInfo(link As String) As ResumableSub
+	Dim job As HttpJob
+	job.Initialize("",Me)
+	job.Download("http://thesis.lib.pku.edu.cn/"&link)
+	wait for (job) jobDone(job As HttpJob)
+	If job.Success Then
+		Dim table As String=js.getElementsByTag(job.GetString,"table").Get(0)
+		Return table
+	Else
+		Return "error"
+	End If
+End Sub
+
+Sub getList As ResumableSub
+	Dim pagesLeft As Boolean=True
+	Dim pageNum As Int=1
+	Do While pagesLeft
+		Log(pageNum)
+		Dim job As HttpJob
+		job.Initialize("",Me)
+		job.Download("http://thesis.lib.pku.edu.cn/pagedown.action?pagenum=20&pager.offset="&(20*(pageNum-1)))
+		wait for (job) jobDone (job As HttpJob)
+		If job.Success Then
+			'Log(job.GetString)
+			Dim filename As String="result"&pageNum&".html"
+			File.WriteString(File.DirApp,filename,job.GetString)
+			Dim index As Int=0
+			Dim author As String
+			Dim title As String
+			Dim link As String
+			Dim completedTime As String
+			Dim tdList As List=js.getElementsByTag(job.GetString,"td")
+			If tdList.Size=0 Then
+				Exit
+			End If
+			For Each td As String In tdList
+                Log(td)
+				
+				Dim s As String=Regex.Replace("</*td>",td,"")
+				Select index
+					Case 1
+						link=js.selectorElementAttr(td,"a","href").Get(0)
+						title=js.selectorElementText(td,"a").Get(0)
+						If thesisMap.ContainsKey(title) Then
+							pagesLeft=False
+						End If
+					Case 2
+						author=s
+					Case 4
+						completedTime=s
+						Dim info As Map
+						info.Initialize
+						info.Put("author",author)
+						info.Put("link",link)
+						info.Put("completedTime",completedTime)
+						thesisMap.Put(title,info)
+						index=-1
+				End Select
+			    index=index+1
+			Next
+			
+		End If
+		pageNum=pageNum+1
+		Log(pageNum)
+	Loop
+    Return ""
+End Sub

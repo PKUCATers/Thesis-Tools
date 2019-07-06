@@ -1,0 +1,112 @@
+﻿AppType=JavaFX
+Build1=Default,b4j.example
+File1=main.bjl
+FileGroup1=Default Group
+Group=Default Group
+Library1=jcore
+Library2=jfx
+Library3=jpoi
+NumberOfFiles=1
+NumberOfLibraries=3
+NumberOfModules=0
+Version=7.32
+@EndOfDesignText@
+#Region Project Attributes 
+	#MainFormWidth: 600
+	#MainFormHeight: 600 
+#End Region
+
+Sub Process_Globals
+	Private fx As JFX
+	Private MainForm As Form
+	Private thesisMap As Map
+	Private ListView1 As ListView
+End Sub
+
+Sub AppStart (Form1 As Form, Args() As String)
+	MainForm = Form1
+	MainForm.RootPane.LoadLayout("main") 'Load the layout file.
+	MainForm.Show
+	thesisMap.Initialize
+End Sub
+
+'Return true to allow the default exceptions handler to handle the uncaught exception.
+Sub Application_Error (Error As Exception, StackTrace As String) As Boolean
+	Return True
+End Sub
+
+Sub Button2_MouseClicked (EventData As MouseEvent)
+	Dim sb As StringBuilder
+	sb.Initialize
+	Dim sorted As List
+	sorted.Initialize
+	For Each completedTime As String In thesisMap.Keys
+		sorted.Add(completedTime)
+	Next
+	sorted.Sort(False)
+	Dim Contents As StringBuilder
+	Contents.Initialize
+	Contents.Append("Table of Contents").Append(CRLF).Append("=================").Append(CRLF).Append(CRLF)
+	For Each completedTime As String In sorted
+		Dim thesisList As List=thesisMap.Get(completedTime)
+		sb.Append("# ").Append(completedTime).Append(CRLF).Append(CRLF)
+		Contents.Append($"   * [${completedTime}](#${completedTime})"$).Append(CRLF)
+		For Each thesis As Map In thesisList
+			Dim title As String=thesis.Get("title")
+			Dim author As String=thesis.Get("author")
+			Dim link As String=thesis.Get("link")
+			Dim table As String=thesis.Get("table")
+			Dim head As String=title&"."&author
+			sb.Append("## ").Append(head).Append(CRLF).Append(CRLF)
+			Contents.Append($"      * [${head}](#${head})"$).Append(CRLF)
+			sb.Append("[链接](").Append(link).Append(")").Append(CRLF).Append(CRLF)
+			sb.Append(table).Append(CRLF).Append(CRLF)
+		Next	
+	Next
+	Contents.Append(CRLF).Append(CRLF)
+	File.WriteString(File.DirApp,"out.md",Contents.ToString&sb.ToString)
+End Sub
+
+Sub Button1_MouseClicked (EventData As MouseEvent)
+	Dim dc As DirectoryChooser
+	dc.Initialize
+	Dim path As String=dc.Show(MainForm)
+	If File.Exists(path,"") Then
+		ListView1.Items.Clear
+		For Each filename As String In File.ListFiles(path)
+			If filename.EndsWith(".xlsx") Then
+				Log(filename)
+				readIntoMap(path,filename)
+			End If
+		Next
+	End If
+
+End Sub
+
+Sub readIntoMap(dir As String,filename As String)
+	Dim wb As PoiWorkbook
+	wb.InitializeExisting(dir,filename,"")
+	Dim sheet1 As PoiSheet=wb.GetSheet(0)
+	For Each row As PoiRow In sheet1.Rows
+		Dim title As String=row.GetCell(0).Value
+		Dim author As String=row.GetCell(1).Value
+		Dim completedTime As String=row.GetCell(3).Value
+		Dim link As String="http://thesis.lib.pku.edu.cn/"&row.GetCell(4).ValueString
+		Dim table As String=row.GetCell(5).Value
+		Dim thesisList As List
+		thesisList.Initialize
+		If thesisMap.ContainsKey(completedTime) Then
+			thesisList=thesisMap.Get(completedTime)
+		End If
+		Dim thesis As Map
+		thesis.Initialize
+		thesis.Put("author",author)
+		thesis.Put("completedTime",completedTime)
+		thesis.Put("link",link)
+		thesis.Put("table",table)
+		thesis.Put("title",title)
+		thesisList.Add(thesis)
+		thesisMap.Put(completedTime,thesisList)
+		ListView1.Items.Add(title)
+	Next
+End Sub
