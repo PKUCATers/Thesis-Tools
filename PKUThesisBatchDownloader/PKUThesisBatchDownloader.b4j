@@ -1,0 +1,127 @@
+﻿AppType=JavaFX
+Build1=Default,b4j.example
+File1=main.bjl
+FileGroup1=Default Group
+Group=Default Group
+Library1=jcore
+Library2=jfx
+Library3=jokhttputils2
+Library4=javaobject
+Library5=selenium
+Module1=By
+Module2=DriverNavigate
+Module3=webdriver
+Module4=WebElement
+NumberOfFiles=1
+NumberOfLibraries=5
+NumberOfModules=4
+Version=7.51
+@EndOfDesignText@
+#Region Project Attributes 
+	#MainFormWidth: 600
+	#MainFormHeight: 600 
+#End Region
+
+Sub Process_Globals
+	Private fx As JFX
+	Private MainForm As Form
+	Private DownloadButton As Button
+	Private ListView1 As ListView
+	Private PageNumTextField As TextField
+	Private URLTextField As TextField
+	Private driver As webdriver
+End Sub
+
+Sub AppStart (Form1 As Form, Args() As String)
+	MainForm = Form1
+	MainForm.RootPane.LoadLayout("main") 'Load the layout file.
+	MainForm.Show
+	driver.Initialize("d://chromedriver.exe")
+	'driver.Get("http://thesis.lib.pku.edu.cn")
+	driver.Get("http://www.baidu.com")
+End Sub
+
+'Return true to allow the default exceptions handler to handle the uncaught exception.
+Sub Application_Error (Error As Exception, StackTrace As String) As Boolean
+	Return True
+End Sub
+
+Sub DownloadButton_MouseClicked (EventData As MouseEvent)
+	'http://162.105.134.188/store/yDyarY4bfKhHIiIMU+rfjQ11/P01_00078.jpg
+	Dim pagenum As Int=PageNumTextField.Text
+	Dim list1 As List
+	list1.Initialize
+	For i=1 To pagenum
+		Dim url As String
+		Dim fullNum As String
+		fullNum=addZero(i)
+		Log(fullNum)
+		url=URLTextField.Text.Replace("*",fullNum)
+		list1.Add(url)
+	Next
+	downloadWithChrome(list1)
+End Sub
+
+
+Sub downloadWithJS(url As String,filename As String)
+	Dim downloadJS As String=$"var a = document.createElement('a');
+a.download = '${filename}';
+a.href = "${url}";
+a.click();
+a.remove();"$
+	driver.asJavascriptExecutor.RunMethod("executeScript",Array(downloadJS,Array("")))
+End Sub
+
+Sub downloadWithChrome(urlList As List)
+	For Each url As String In urlList
+		Dim filename As String
+		filename=url.SubString(url.LastIndexOf("/")+1)
+		Sleep(500)
+		downloadWithJS(url,filename)
+		ListView1.Items.Add(url)
+	Next
+End Sub
+
+Sub download(urlList As List)
+
+	For Each url As String In urlList
+		Dim filename As String
+		filename=url.SubString(url.LastIndexOf("/")+1)
+		Dim job As HttpJob
+		job.Initialize("",Me)
+		job.Download(url)
+		wait for (job) jobDone(job As HttpJob)
+		If job.Success Then
+			ListView1.Items.RemoveAt(ListView1.Items.IndexOf(url))
+			Dim out As OutputStream = File.OpenOutput(File.DirApp,filename,False) 
+			File.Copy2(job.GetInputStream, out)
+			out.Close '<------ very important
+			Log(url)
+		End If
+	Next
+	If ListView1.Items.Size<>0 Then
+		Dim list1 As List
+		list1.Initialize
+		list1.AddAll(ListView1.Items)
+		download(list1)
+	End If
+End Sub
+
+Sub addZero(num As Int) As String
+	Return format("%05d",Array(num))
+End Sub
+
+Sub inline As JavaObject
+	Return Me
+End Sub
+
+Sub format(f As String,a() As Object) As String
+	Return inline.RunMethod("format",Array(f,a))
+End Sub
+#if java
+import java.lang.String;
+
+static public String format(String f,Object... args){
+    return String.format(f,args);
+}
+#end if
